@@ -51,6 +51,7 @@ int speed = 200;
 #define RIGHT_MOTOR_IN3 12 // Connect to IN3 on L298N
 #define RIGHT_MOTOR_IN4 14 // Connect to IN4 on L298N
 
+
 void moveForward() {
   Serial.println("Action: Moving Forward");
   // Left Motor Forward
@@ -176,9 +177,10 @@ void loop_1() {
     }
 
      else if (cmd == "UP") {
-      moveForward();
-    } else if (cmd == "DOWN") {
       moveBackward();
+      
+    } else if (cmd == "DOWN") {
+      moveForward();
     } else if (cmd == "LEFT") {
       turnLeft();
     } else if (cmd == "RIGHT") {
