@@ -37,6 +37,10 @@ BLEOtaUpdate bleOta(CUSTOM_SERVICE_UUID, CUSTOM_OTA_CHAR_UUID, CUSTOM_COMMAND_CH
 // LED pin for status indication
 #define LED_PIN 2
 
+#define LEFT_SENSOR 35
+
+#define RIGHT_SENSOR 34
+
 
 #define TRIG_PIN 2
 #define ECHO_PIN 4
@@ -53,7 +57,7 @@ enum class MovingDirection {
 MovingDirection movingDirection;
 
 // Robot state
-int speed = 200;
+int speed = 100;
 int dist = 999;
 bool robotEnabled = true;
 long getDistance();
@@ -76,6 +80,9 @@ return distance;
 
 void setup() {
   Serial.begin(115200);
+
+  pinMode(LEFT_SENSOR, INPUT);
+  pinMode(RIGHT_SENSOR, INPUT);
   
   // Configure motor pins
   pinMode(LEFT_MOTOR_IN1, OUTPUT);
@@ -83,6 +90,7 @@ void setup() {
   pinMode(RIGHT_MOTOR_IN3, OUTPUT);
   pinMode(RIGHT_MOTOR_IN4, OUTPUT);
   pinMode(LED_PIN, OUTPUT);
+  
   
   // Setup PWM
   setupPWM();
@@ -115,6 +123,26 @@ void setup() {
 }
 
 void loop() {
+
+  int x = analogRead(RIGHT_SENSOR);
+  
+  int y = analogRead(LEFT_SENSOR);
+  Serial.printf("infrared values: %d %d \n", x,y);
+
+  int threshold = 1000;
+
+   if (x < threshold && y >= threshold) {
+    turnLeft();
+  } 
+  else if (y < threshold && x >= threshold) {
+    turnRight();
+  } 
+  else {
+    moveUP();
+  }
+
+
+  
   // Main loop - all BLE work is done in callbacks
   delay(100);
   
@@ -128,7 +156,7 @@ void loop() {
   dist = getDistance();
   if(dist<=40 && movingDirection == MovingDirection::UP){
     stopMotors();
-    moveForward();
+    moveDown();
     delay(400);
     stopMotors();
   }
@@ -190,10 +218,10 @@ void onCommand(const String& command) {
   
   // Robot movement commands
   if (command == "UP") {
-    moveBackward();
+    moveUP();
     bleOta.sendStatus("Moving forward");
   } else if (command == "DOWN") {
-    moveForward();
+    moveDown();
     bleOta.sendStatus("Moving backward");
   } else if (command == "LEFT") {
     turnLeft();
@@ -259,7 +287,7 @@ void onConnection(bool connected) {
 }
 
 // Robot movement functions
-void moveForward() {
+void moveDown() {
   if (!robotEnabled) return;
   movingDirection = MovingDirection::DOWN;
   
@@ -276,12 +304,12 @@ void moveForward() {
 
 }
 
-void moveBackward() {
+void moveUP() {
   if (!robotEnabled) return;
 
    if(dist<=40) {
     stopMotors();
-    moveForward();
+    moveDown();
     delay(400);
     stopMotors();
     return;
