@@ -7,7 +7,7 @@
   Based on the original robot control code with added BLE OTA functionality.
 */
 
-#include "BLEOtaUpdate.h"
+#include <BLEOtaUpdate.h>
 
 // Custom UUIDs from original BLEOtaHandler
 const char* CUSTOM_SERVICE_UUID = "66443771-D481-49B0-BE32-8CE24AC0F09C";
@@ -37,11 +37,11 @@ BLEOtaUpdate bleOta(CUSTOM_SERVICE_UUID, CUSTOM_OTA_CHAR_UUID, CUSTOM_COMMAND_CH
 // LED pin for status indication
 #define LED_PIN 2
 
+// Infrared Sensor
 #define LEFT_SENSOR 35
-
 #define RIGHT_SENSOR 34
 
-
+// Ultrasonic Sensor
 #define TRIG_PIN 2
 #define ECHO_PIN 4
 
@@ -55,12 +55,77 @@ enum class MovingDirection {
 };
 
 MovingDirection movingDirection;
-
-// Robot state
 int speed = 100;
 int dist = 999;
-bool robotEnabled = true;
+bool isUltrasonicEnable = false;
+int ultrasonicRange = 40;
+unsigned long reverseStartTime = 0;
+bool reversing = false;
+
+
+bool isInfraredEnable = false;
+
+
+
+
+
+
 long getDistance();
+
+void infraredLoop();
+
+bool ultrasonicLoop();
+
+bool ultrasonicLoop(){
+  if(isUltrasonicEnable==false){
+    return false;
+  }
+  bool isUnderRange = false;
+  dist = getDistance();
+  if(!reversing && dist<=ultrasonicRange && movingDirection == MovingDirection::UP){
+    isUnderRange = true;
+    stopMotors();
+    moveDown();
+    reversing = true; // start reversing mode
+    reverseStartTime = millis(); // mark the start time
+    stopMotors();
+  }
+  if(reversing){
+        if(millis() - reverseStartTime >= 300){ // 400 ms passed
+            stopMotors();
+            reversing = false; // end reversing mode
+        }
+    }
+  Serial.print(" | Ultrasonic: "); Serial.print(dist);
+  Serial.println("cm");
+  return isUnderRange;
+}
+
+
+void infraredLoop(){
+  if(isInfraredEnable==false){
+    return;
+  }
+  int x = analogRead(RIGHT_SENSOR);
+  
+  int y = analogRead(LEFT_SENSOR);
+  Serial.printf("infrared values: %d %d \n", x,y);
+
+  int threshold = 1000;
+
+   if (x < threshold && y >= threshold) {
+    turnRight();
+  } 
+  else if (y < threshold && x >= threshold) {
+    turnLeft();
+  } else if(x>=threshold and y>=threshold){
+    stopMotors();
+  }
+  else if(movingDirection == MovingDirection::STOP){
+    moveUP();
+  }
+}
+
 
 long getDistance() {
 // Send a 10us pulse to trigger
@@ -112,7 +177,7 @@ void setup() {
   bleOta.setConnectionCallback(onConnection);
   
   // Start BLE OTA service
-  bleOta.begin("Robot-ESP32");
+  bleOta.begin("Car Robot-ESP32");
   
   Serial.println("Robot BLE OTA service is ready!");
   Serial.println("Available commands:");
@@ -123,46 +188,10 @@ void setup() {
 }
 
 void loop() {
-
-  int x = analogRead(RIGHT_SENSOR);
+  infraredLoop();
   
-  int y = analogRead(LEFT_SENSOR);
-  Serial.printf("infrared values: %d %d \n", x,y);
-
-  int threshold = 1000;
-
-   if (x < threshold && y >= threshold) {
-    turnLeft();
-  } 
-  else if (y < threshold && x >= threshold) {
-    turnRight();
-  } 
-  else {
-    moveUP();
-  }
-
-
-  
-  // Main loop - all BLE work is done in callbacks
-  delay(100);
-  
-  // Blink LED to show the device is running
-  static unsigned long lastBlink = 0;
-  if (millis() - lastBlink > 2000) {
-    digitalWrite(LED_PIN, !digitalRead(LED_PIN));
-    lastBlink = millis();
-  }
-
-  dist = getDistance();
-  if(dist<=40 && movingDirection == MovingDirection::UP){
-    stopMotors();
-    moveDown();
-    delay(400);
-    stopMotors();
-  }
-  Serial.print(" | Ultrasonic: "); Serial.print(dist);
-  Serial.println("cm");
-}
+  ultrasonicLoop();
+ }
 
 // BLE OTA Callbacks
 void onOtaProgress(uint32_t received, uint32_t total, uint8_t percentage) {
@@ -185,10 +214,6 @@ void onOtaStatus(OtaStatus status, const char* message) {
       break;
     case OtaStatus::RECEIVING:
       digitalWrite(LED_PIN, HIGH);
-      // Stop robot during update for safety
-      if (robotEnabled) {
-        stopMotors();
-      }
       break;
     case OtaStatus::COMPLETED:
       // LED will stay on until reboot
@@ -210,11 +235,7 @@ void onOtaStatus(OtaStatus status, const char* message) {
 
 void onCommand(const String& command) {
   Serial.printf("Received command: %s\n", command.c_str());
-  
-  if (!robotEnabled && !command.startsWith("ENABLE")) {
-    bleOta.sendStatus("Robot disabled. Send ENABLE to enable.");
-    return;
-  }
+
   
   // Robot movement commands
   if (command == "UP") {
@@ -232,45 +253,33 @@ void onCommand(const String& command) {
   } else if (command == "STOP") {
     stopMotors();
     bleOta.sendStatus("Stopped");
-  }
-  // Speed control
-  else if (command.startsWith("SPEED_")) {
+  } else if (command.startsWith("SPEED_")) {
     String speedValue = command.substring(6);
     speed = speedValue.toInt();
     speed = constrain(speed, 0, 255);
     bleOta.sendStatus("Speed set to " + String(speed));
-  }
-  // Robot control
-  else if (command == "ENABLE") {
-    robotEnabled = true;
-    bleOta.sendStatus("Robot enabled");
-  } else if (command == "DISABLE") {
-    robotEnabled = false;
-    stopMotors();
-    bleOta.sendStatus("Robot disabled");
-  }
-  // Status commands
-  else if (command == "STATUS") {
-    String status = "Robot Status: ";
-    status += robotEnabled ? "Enabled" : "Disabled";
-    status += ", Speed: " + String(speed);
-    status += ", Connected: " + String(bleOta.isConnected() ? "true" : "false");
-    status += ", UpdateInProgress: " + String(bleOta.isUpdateInProgress() ? "true" : "false");
-    bleOta.sendStatus(status);
-  } else if (command == "UPTIME") {
-    String uptime = "Uptime: " + String(millis() / 1000) + " seconds";
-    bleOta.sendStatus(uptime);
-  } else if (command == "MEMORY") {
-    String memory = "Free heap: " + String(ESP.getFreeHeap()) + " bytes";
-    bleOta.sendStatus(memory);
-  } else if (command == "UUID_INFO") {
-    String uuidInfo = "Custom UUIDs in use:\n";
-    uuidInfo += "Service: " + String(CUSTOM_SERVICE_UUID) + "\n";
-    uuidInfo += "OTA Char: " + String(CUSTOM_OTA_CHAR_UUID) + "\n";
-    uuidInfo += "Command Char: " + String(CUSTOM_COMMAND_CHAR_UUID) + "\n";
-    uuidInfo += "Status Char: " + String(CUSTOM_STATUS_CHAR_UUID);
-    bleOta.sendStatus(uuidInfo);
-  } else {
+  } else if(command.startsWith("ULTRASONIC_")) {
+      String ultrasonicValue = command.substring(11);
+      if(ultrasonicValue.startsWith("OFF")){
+        isUltrasonicEnable=false;
+      }else{
+        ultrasonicRange = ultrasonicValue.toInt();
+        ultrasonicRange = constrain(ultrasonicRange, 10, 100);
+        bleOta.sendStatus("ultrasonicRange set to " + String(ultrasonicRange));
+        if(isUltrasonicEnable==false){
+          isUltrasonicEnable=true;
+        }
+      }
+  } else if(command.startsWith("INFRARED_")){
+      String infraredValue = command.substring(9);
+      if(infraredValue.startsWith("ON")){
+        isInfraredEnable=true;
+      }else if(infraredValue.startsWith("OFF")){
+        stopMotors();
+        isInfraredEnable=false;
+      }
+  } 
+  else {
     bleOta.sendStatus("Unknown command: " + command);
   }
 }
@@ -288,11 +297,10 @@ void onConnection(bool connected) {
 
 // Robot movement functions
 void moveDown() {
-  if (!robotEnabled) return;
   movingDirection = MovingDirection::DOWN;
   
   
-  Serial.println("Action: Moving Forward");
+  Serial.println("Action: Moving Down");
   digitalWrite(LEFT_MOTOR_IN1, HIGH);
   digitalWrite(LEFT_MOTOR_IN2, LOW);
   digitalWrite(RIGHT_MOTOR_IN3, HIGH);
@@ -305,20 +313,16 @@ void moveDown() {
 }
 
 void moveUP() {
-  if (!robotEnabled) return;
 
-   if(dist<=40) {
-    stopMotors();
-    moveDown();
-    delay(400);
-    stopMotors();
+   bool isDistanceUnderRange = ultrasonicLoop();
+   if(isDistanceUnderRange){
     return;
-   } 
+   }
 
   movingDirection = MovingDirection::UP;
 
   
-  Serial.println("Action: Moving Backward");
+  Serial.println("Action: Moving UP");
   digitalWrite(LEFT_MOTOR_IN1, LOW);
   digitalWrite(LEFT_MOTOR_IN2, HIGH);
   digitalWrite(RIGHT_MOTOR_IN3, LOW);
@@ -330,7 +334,6 @@ void moveUP() {
 }
 
 void turnLeft() {
-  if (!robotEnabled) return;
   movingDirection = MovingDirection::LEFT;
 
   
@@ -345,7 +348,6 @@ void turnLeft() {
 }
 
 void turnRight() {
-  if (!robotEnabled) return;
   movingDirection = MovingDirection::RIGHT;
 
   
