@@ -114,14 +114,16 @@ void infraredLoop(){
   int threshold = 1000;
 
    if (x < threshold && y >= threshold) {
-    turnRight();
+    turnLeft();
+    delay(400);
   } 
   else if (y < threshold && x >= threshold) {
-    turnLeft();
+    turnRight();
+    delay(400);
   } else if(x>=threshold and y>=threshold){
     stopMotors();
   }
-  else if(movingDirection == MovingDirection::STOP){
+  else {
     moveUP();
   }
 }
@@ -150,7 +152,7 @@ void setup() {
   pinMode(RIGHT_SENSOR, INPUT);
   
   // Configure motor pins
-  pinMode(LEFT_MOTOR_IN1, OUTPUT);
+   pinMode(LEFT_MOTOR_IN1, OUTPUT);
   pinMode(LEFT_MOTOR_IN2, OUTPUT);
   pinMode(RIGHT_MOTOR_IN3, OUTPUT);
   pinMode(RIGHT_MOTOR_IN4, OUTPUT);
