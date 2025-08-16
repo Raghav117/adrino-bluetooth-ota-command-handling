@@ -28,7 +28,7 @@ void setup() {
   bleOta.setConnectionCallback(onConnection);
   
   // Start BLE OTA service
-  bleOta.begin("CRobot-ESP32");
+  bleOta.begin("Car Robot-ESP32");
 }
 
 void loop() {
